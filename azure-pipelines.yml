@@ -1,0 +1,104 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  terraformVersion: '1.6.6'
+  workingDir: 'environments/dev'
+
+stages:
+
+# =========================
+# PLAN STAGE
+# =========================
+- stage: TerraformPlan
+  displayName: Terraform Plan
+  jobs:
+  - job: plan
+    steps:
+
+    - task: TerraformInstaller@1
+      displayName: Install Terraform
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    - task: TerraformTaskV4@4
+      displayName: Terraform Init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: $(workingDir)
+        backendServiceArm: 'Azure-connection'
+        backendAzureRmResourceGroupName: 'Storage-dev-RG'
+        backendAzureRmStorageAccountName: 'storageaccountdev69'
+        backendAzureRmContainerName: 'dev-aks-tfstate'
+        backendAzureRmKey: 'dev.aks.tfstate'
+
+    - task: TerraformTaskV4@4
+      displayName: Terraform Plan
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: $(workingDir)
+        environmentServiceNameAzureRM: 'Azure-connection'
+        commandOptions: '-var-file=dev.tfvars -out=tfplan'
+
+    - task: PublishPipelineArtifact@1
+      displayName: Publish tfplan
+      inputs:
+        targetPath: '$(workingDir)/tfplan'
+        artifact: tfplan
+
+
+# =========================
+# APPLY STAGE
+# =========================
+- stage: TerraformApply
+  displayName: Terraform Apply
+  dependsOn: TerraformPlan
+  condition: succeeded()
+
+  jobs:
+  - job: apply
+    steps:
+
+    - task: TerraformInstaller@1
+      displayName: Install Terraform
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    - task: TerraformTaskV4@4
+      displayName: Terraform Init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: $(workingDir)
+        backendServiceArm: 'Azure-connection'
+        backendAzureRmResourceGroupName: 'Storage-dev-RG'
+        backendAzureRmStorageAccountName: 'storageaccountdev69'
+        backendAzureRmContainerName: 'dev-aks-tfstate'
+        backendAzureRmKey: 'dev.aks.tfstate'
+
+    - task: DownloadPipelineArtifact@2
+      displayName: Download tfplan
+      inputs:
+        artifact: tfplan
+        path: $(workingDir)
+
+    - task: TerraformTaskV4@4
+      displayName: Terraform Apply
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: $(workingDir)
+        environmentServiceNameAzureRM: 'Azure-connection'
+        commandOptions: 'tfplan'
+
+
