@@ -1,0 +1,49 @@
+# ============================
+# Terraform build artifacts
+# ============================
+# This folder stores provider plugins and local cache.
+# It is automatically generated and should never be committed.
+.terraform/
+
+# ============================
+# Terraform state files
+# ============================
+# These files contain sensitive information (keys, secrets, IDs).
+# They must NEVER be pushed to GitHub.
+*.tfstate
+*.tfstate.*
+
+# ============================
+# Terraform lock file
+# ============================
+# This file tracks provider versions.
+# You can commit it OR ignore it — optional.
+.terraform.lock.hcl
+
+# ============================
+# Crash logs
+# ============================
+# Terraform writes crash logs when something fails unexpectedly.
+# These are local debugging files.
+crash.log
+crash.*.log
+
+# ============================
+# Local override files
+# ============================
+# These files are used for local testing only.
+# They should not be shared with the team.
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# ============================
+# Editor / OS junk files
+# ============================
+# These files are created by your operating system or IDE.
+# They are not part of your Terraform project.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
