@@ -1,0 +1,215 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  terraformVersion: '1.6.6'
+  serviceConnection: 'Azure-connection'
+
+  # Terraform Working Directory
+  workingDirectory: 'environments/dev'
+
+  # Backend Configuration
+  backendResourceGroup: 'Storage-dev-RG'
+  backendStorageAccount: 'storageaccountdev69'
+  backendContainer: 'dev-aks-tfstate'
+  backendKey: 'dev.aks.tfstate'
+
+  # Terraform Plan Artifact
+  tfPlanFile: 'tfplan'
+
+stages:
+
+# ======================================================
+# Stage 1 - Terraform Initialization
+# ======================================================
+- stage: Terraform_Init
+  displayName: 'Terraform Init Stage'
+
+  jobs:
+  - job: Init
+    displayName: 'Terraform Initialization'
+
+    steps:
+
+    # Checkout Repository
+    - checkout: self
+
+    # Install Terraform
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    # Terraform Init
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(workingDirectory)'
+        backendServiceArm: $(serviceConnection)
+        backendAzureRmResourceGroupName: $(backendResourceGroup)
+        backendAzureRmStorageAccountName: $(backendStorageAccount)
+        backendAzureRmContainerName: $(backendContainer)
+        backendAzureRmKey: $(backendKey)
+
+# ======================================================
+# Stage 2 - Terraform Validate
+# ======================================================
+- stage: Terraform_Validate
+  displayName: 'Terraform Validate Stage'
+  dependsOn: Terraform_Init
+  condition: succeeded()
+
+  jobs:
+  - job: Validate
+    displayName: 'Terraform Validation'
+
+    steps:
+
+    # Checkout Repository
+    - checkout: self
+
+    # Install Terraform
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    # Terraform Init
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(workingDirectory)'
+        backendServiceArm: $(serviceConnection)
+        backendAzureRmResourceGroupName: $(backendResourceGroup)
+        backendAzureRmStorageAccountName: $(backendStorageAccount)
+        backendAzureRmContainerName: $(backendContainer)
+        backendAzureRmKey: $(backendKey)
+
+    # Terraform Validate
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Validate'
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(workingDirectory)'
+
+# ======================================================
+# Stage 3 - Terraform Plan
+# ======================================================
+- stage: Terraform_Plan
+  displayName: 'Terraform Plan Stage'
+  dependsOn: Terraform_Validate
+  condition: succeeded()
+
+  jobs:
+  - job: Plan
+    displayName: 'Terraform Planning'
+
+    steps:
+
+    # Checkout Repository
+    - checkout: self
+
+    # Install Terraform
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    # Terraform Init
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(workingDirectory)'
+        backendServiceArm: $(serviceConnection)
+        backendAzureRmResourceGroupName: $(backendResourceGroup)
+        backendAzureRmStorageAccountName: $(backendStorageAccount)
+        backendAzureRmContainerName: $(backendContainer)
+        backendAzureRmKey: $(backendKey)
+
+    # Terraform Plan
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Plan'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(workingDirectory)'
+        commandOptions: '-var-file=dev.tfvars -out=$(tfPlanFile)'
+        environmentServiceNameAzureRM: $(serviceConnection)
+
+    # Publish Terraform Plan Artifact
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Terraform Plan Artifact'
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/$(workingDirectory)/$(tfPlanFile)'
+        ArtifactName: 'terraform-plan'
+        publishLocation: 'Container'
+
+# ======================================================
+# Stage 4 - Terraform Apply
+# ======================================================
+- stage: Terraform_Apply
+  displayName: 'Terraform Apply Stage'
+  dependsOn: Terraform_Plan
+  condition: succeeded()
+
+  jobs:
+  - job: Apply
+    displayName: 'Terraform Deployment'
+
+    steps:
+
+    # Checkout Repository
+    - checkout: self
+
+    # Install Terraform
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    # Download Terraform Plan Artifact
+    - task: DownloadBuildArtifacts@0
+      displayName: 'Download Terraform Plan Artifact'
+      inputs:
+        buildType: 'current'
+        downloadType: 'single'
+        artifactName: 'terraform-plan'
+        downloadPath: '$(Pipeline.Workspace)'
+
+    # Terraform Init
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(workingDirectory)'
+        backendServiceArm: $(serviceConnection)
+        backendAzureRmResourceGroupName: $(backendResourceGroup)
+        backendAzureRmStorageAccountName: $(backendStorageAccount)
+        backendAzureRmContainerName: $(backendContainer)
+        backendAzureRmKey: $(backendKey)
+
+    # Terraform Apply
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Apply'
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(workingDirectory)'
+        commandOptions: '$(Pipeline.Workspace)/terraform-plan/$(tfPlanFile)'
+        environmentServiceNameAzureRM: $(serviceConnection)
