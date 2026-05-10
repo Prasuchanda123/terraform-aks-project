@@ -1,0 +1,197 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  terraformVersion: '1.6.6'
+  serviceConnection: 'Azure-connection'
+  workingDirectory: 'environments/dev'
+
+  # Backend Configuration
+  backendResourceGroup: 'Storage-dev-RG'
+  backendStorageAccount: 'storageaccountdev69'
+  backendContainer: 'dev-aks-tfstate'
+  backendKey: 'dev.aks.tfstate'
+
+  # Terraform Plan Artifact
+  tfPlanFile: 'tfplan'
+
+stages:
+
+# =========================================
+# Stage 1 - Terraform Initialization
+# =========================================
+- stage: Terraform_Init
+  displayName: 'Terraform Init Stage'
+
+  jobs:
+  - job: Init
+    displayName: 'Terraform Initialization'
+
+    steps:
+
+    - checkout: self
+
+    # Install Terraform
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    # Terraform Init
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        backendServiceArm: $(serviceConnection)
+        backendAzureRmResourceGroupName: $(backendResourceGroup)
+        backendAzureRmStorageAccountName: $(backendStorageAccount)
+        backendAzureRmContainerName: $(backendContainer)
+        backendAzureRmKey: $(backendKey)
+
+# =========================================
+# Stage 2 - Terraform Validate
+# =========================================
+- stage: Terraform_Validate
+  displayName: 'Terraform Validate Stage'
+  dependsOn: Terraform_Init
+
+  jobs:
+  - job: Validate
+    displayName: 'Terraform Validation'
+
+    steps:
+
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        backendServiceArm: $(serviceConnection)
+        backendAzureRmResourceGroupName: $(backendResourceGroup)
+        backendAzureRmStorageAccountName: $(backendStorageAccount)
+        backendAzureRmContainerName: $(backendContainer)
+        backendAzureRmKey: $(backendKey)
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Validate'
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+
+# =========================================
+# Stage 3 - Terraform Plan
+# =========================================
+- stage: Terraform_Plan
+  displayName: 'Terraform Plan Stage'
+  dependsOn: Terraform_Validate
+  condition: succeeded()
+
+  jobs:
+  - job: Plan
+    displayName: 'Terraform Planning'
+
+    steps:
+
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        backendServiceArm: $(serviceConnection)
+        backendAzureRmResourceGroupName: $(backendResourceGroup)
+        backendAzureRmStorageAccountName: $(backendStorageAccount)
+        backendAzureRmContainerName: $(backendContainer)
+        backendAzureRmKey: $(backendKey)
+
+    # Terraform Plan
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Plan'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        commandOptions: '-var-file=dev.tfvars -out=$(tfPlanFile)'
+        environmentServiceNameAzureRM: $(serviceConnection)
+
+    # Publish Terraform Plan Artifact
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Terraform Plan Artifact'
+      inputs:
+        targetPath: '$(WorkingDirectory)/$(tfPlanFile)'
+        ArtifactName: '$(tfPlanFile)'
+        
+
+# =========================================
+# Stage 4 - Terraform Apply
+# =========================================
+- stage: Terraform_Apply
+  displayName: 'Terraform Apply Stage'
+  dependsOn: Terraform_Plan
+  condition: succeeded()
+
+  jobs:
+  - job: Apply
+    displayName: 'Terraform Deployment'
+
+    steps:
+
+    - checkout: self
+
+    # Install Terraform
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    # Download Published Artifact
+    - task: DownloadBuildArtifacts@0
+      displayName: 'Download Terraform Artifact'
+      inputs:
+        buildType: 'current'
+        downloadType: 'single'
+        artifactName: '$(tfPlanFile)'
+        downloadPath: '$(workingDirectory)'
+
+    # Terraform Init
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        backendServiceArm: $(serviceConnection)
+        backendAzureRmResourceGroupName: $(backendResourceGroup)
+        backendAzureRmStorageAccountName: $(backendStorageAccount)
+        backendAzureRmContainerName: $(backendContainer)
+        backendAzureRmKey: $(backendKey)
+
+    # Terraform Apply
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Apply'
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        commandOptions: '$(tfPlanFile)'
+        environmentServiceNameAzureRM: $(serviceConnection)
+
+
